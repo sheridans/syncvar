@@ -1,0 +1,62 @@
+#!/usr/local/bin/bash
+#
+# NOTE: this script runs early in the startup process, before
+# /usr is available. It requires that a statically compiled 
+# version of rsync is installed in /usr/local/bin/rsync
+
+# PROVIDE: syncvar
+# REQUIRE: mountcritlocal var
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name=syncvar
+rcvar=syncvar_enable;
+
+load_rc_config ${name}
+
+command="/usr/local/bin/rsync"
+pidfile="/var/run/${name}.pid"
+
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+status_cmd="${name}_status"
+
+: ${syncvar_enable="NO"}
+: ${syncvar_dir="/var.disk"}
+: ${syncvar_excludes="tmp/ empty/"}
+
+#required_dirs="${syncvar_dir}"
+
+#
+# Parse Excludes from rc.conf
+#
+excludes=""
+IFS=' ' read -a arr <<< "${syncvar_excludes}"
+
+for excl in "${arr[@]}"
+do
+	excludes+=" --exclude $excl"
+done
+
+syncvar_start () {
+	echo "Syncing var from disk."
+	$command -av $excludes $syncvar_dir /var/
+}
+
+syncvar_stop () {
+	echo "Syncing var to disk."
+
+	excludes+=" --exclude run/ --exclude entropy/ --exclude supervise/"
+	
+	# Remount as r/w
+	(  /sbin/mount -u -o rw $syncvar_dir ||	# HD boot
+	   /sbin/mount -u -o rw / ||		# CF boot
+	  ( echo "Failed to mount: $syncvar_dir" && exit 1)
+	)
+
+	$command -av $excludes /var/ $syncvar_dir/
+		 
+}
+
+run_rc_command "$1"
